@@ -6,9 +6,9 @@ A modern, cross-platform GUI SSH client built with C++ and Qt.
 
 Download the latest release for your platform:
 
-- **macOS**: [ssh-client-macos.dmg](https://github.com/YOUR_USERNAME/ssh-program/releases/latest/download/ssh-client-macos.dmg)
-- **Windows**: [ssh-client-windows.zip](https://github.com/YOUR_USERNAME/ssh-program/releases/latest/download/ssh-client-windows.zip)
-- **Linux**: [ssh-client-linux.AppImage](https://github.com/YOUR_USERNAME/ssh-program/releases/latest/download/ssh-client-linux.AppImage)
+- **macOS**: [ssh-client-macos.dmg](https://github.com/NiceTop1027/SSH-CLIENT-C-/releases/latest/download/ssh-client-macos.dmg)
+- **Windows**: [ssh-client-windows.zip](https://github.com/NiceTop1027/SSH-CLIENT-C-/releases/latest/download/ssh-client-windows.zip) (Coming soon via GitHub Actions)
+- **Linux**: [ssh-client-linux.AppImage](https://github.com/NiceTop1027/SSH-CLIENT-C-/releases/latest/download/ssh-client-linux.AppImage) (Coming soon via GitHub Actions)
 
 ## ✨ Features
 
