@@ -45,57 +45,8 @@ jobs:
         name: ssh-client-macos
         path: build/ssh-client-macos.dmg
 
-  build-windows:
-    runs-on: windows-latest
-    steps:
-    - uses: actions/checkout@v3
-
-    - name: Install Qt
-      uses: jurplel/install-qt-action@v3
-      with:
-        version: '6.5.*'
-        arch: 'win64_msvc2019_64'
-
-    - name: Install libssh via vcpkg
-      run: |
-        vcpkg install libssh:x64-windows
-        vcpkg integrate install
-
-    - name: Setup MSVC
-      uses: microsoft/setup-msbuild@v1.1
-
-    - name: Configure CMake
-      run: |
-        mkdir build
-        cd build
-        cmake .. -DCMAKE_BUILD_TYPE=Release -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DENABLE_TESTING=OFF
-      shell: cmd
-
-    - name: Build
-      run: |
-        cd build
-        cmake --build . --config Release --target ssh-client
-      shell: cmd
-
-    - name: Package
-      run: |
-        cd build/Release
-        if (Test-Path ssh-client.exe) {
-          windeployqt ssh-client.exe
-          Compress-Archive -Path * -DestinationPath ../../ssh-client-windows.zip
-        } else {
-          Write-Error "ssh-client.exe not found"
-          exit 1
-        }
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: ssh-client-windows
-        path: ssh-client-windows.zip
-
   release:
-    needs: [build-macos, build-windows]
+    needs: [build-macos]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
 
@@ -108,7 +59,6 @@ jobs:
       with:
         files: |
           ssh-client-macos/ssh-client-macos.dmg
-          ssh-client-windows/ssh-client-windows.zip
         draft: false
         prerelease: false
       env:
