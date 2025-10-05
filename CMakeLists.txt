@@ -101,9 +101,12 @@ install(TARGETS ${PROJECT_NAME}
     BUNDLE DESTINATION .
 )
 
-# Enable testing
-enable_testing()
-add_subdirectory(tests)
+# Enable testing (can be disabled with -DENABLE_TESTING=OFF)
+option(ENABLE_TESTING "Build tests" ON)
+if(ENABLE_TESTING)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
 
 # CPack configuration for packaging
 include(CPack)

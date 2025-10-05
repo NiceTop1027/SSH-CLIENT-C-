@@ -26,12 +26,12 @@ jobs:
       run: |
         mkdir build
         cd build
-        cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$(brew --prefix qt@6)
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$(brew --prefix qt@6) -DENABLE_TESTING=OFF
 
     - name: Build
       run: |
         cd build
-        make -j4
+        make -j4 ssh-client
 
     - name: Create DMG
       run: |
@@ -56,9 +56,10 @@ jobs:
         version: '6.5.*'
         arch: 'win64_msvc2019_64'
 
-    - name: Install libssh
+    - name: Install libssh via vcpkg
       run: |
-        choco install libssh --version=0.10.5
+        vcpkg install libssh
+        vcpkg integrate install
 
     - name: Setup MSVC
       uses: microsoft/setup-msbuild@v1.1
@@ -67,7 +68,7 @@ jobs:
       run: |
         mkdir build
         cd build
-        cmake .. -DCMAKE_BUILD_TYPE=Release -G "Visual Studio 17 2022" -A x64
+        cmake .. -DCMAKE_BUILD_TYPE=Release -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DENABLE_TESTING=OFF
 
     - name: Build
       run: |
@@ -100,12 +101,12 @@ jobs:
       run: |
         mkdir build
         cd build
-        cmake .. -DCMAKE_BUILD_TYPE=Release
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTING=OFF
 
     - name: Build
       run: |
         cd build
-        make -j$(nproc)
+        make -j$(nproc) ssh-client
 
     - name: Package AppImage
       run: |
