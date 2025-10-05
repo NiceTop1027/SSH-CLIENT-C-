@@ -1,5 +1,7 @@
 #include "MainWindow.h"
 #include "ConnectionDialog.h"
+#include "PreferencesDialog.h"
+#include "AppSettings.h"
 #include "SSHConnection.h"
 #include "SSHAuthenticator.h"
 #include "SSHWorkerThread.h"
@@ -32,8 +34,21 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), m_tabWidget(nullp
 
     // Set window properties
     setWindowTitle("SSH Client");
-    resize(1024, 768);
+
+    // Load window size from settings
+    AppSettings* settings = AppSettings::instance();
+    if (settings->rememberWindowSize()) {
+        resize(settings->lastWindowSize());
+    } else {
+        resize(1024, 768);
+    }
     setMinimumSize(800, 600);
+
+    // Apply window opacity
+    setWindowOpacity(settings->terminalOpacity());
+
+    // Connect to settings changes
+    connect(settings, &AppSettings::settingsChanged, this, &MainWindow::onSettingsChanged);
 
     // Ensure window is visible and raised
     raise();
@@ -45,6 +60,14 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), m_tabWidget(nullp
 MainWindow::~MainWindow()
 {
     qInfo(ui) << "MainWindow shutting down, cleaning up" << m_tabs.size() << "connections";
+
+    // Save window size
+    AppSettings* settings = AppSettings::instance();
+    if (settings->rememberWindowSize()) {
+        settings->setLastWindowSize(size());
+        settings->save();
+    }
+
     // Cleanup connections
     for (int i = 0; i < m_tabs.size(); ++i) {
         auto& tabData = m_tabs[i];
@@ -77,6 +100,16 @@ void MainWindow::addNewTab(const QString& title)
 {
     TabData tabData;
     tabData.terminal = new TerminalView();
+
+    // Apply current settings to new terminal
+    AppSettings* settings = AppSettings::instance();
+    tabData.terminal->setBackgroundImage(settings->terminalBackgroundImage());
+    tabData.terminal->setBackgroundImageOpacity(settings->backgroundImageOpacity());
+    QFont font(settings->terminalFontFamily(), settings->terminalFontSize());
+    tabData.terminal->setCustomFont(font);
+    tabData.terminal->setCustomColors(settings->terminalForegroundColor(),
+                                      settings->terminalBackgroundColor());
+
     tabData.connection = nullptr;
     tabData.worker = nullptr;
 
@@ -167,6 +200,12 @@ void MainWindow::onPaste()
     }
 }
 
+void MainWindow::onPreferences()
+{
+    PreferencesDialog dialog(this);
+    dialog.exec();
+}
+
 void MainWindow::onAbout()
 {
     QMessageBox::about(this, "About SSH Client",
@@ -175,7 +214,16 @@ void MainWindow::onAbout()
                        "Features:\n"
                        "- Multiple concurrent connections\n"
                        "- Password and key authentication\n"
-                       "- Terminal emulation with ANSI support");
+                       "- Terminal emulation with ANSI support\n"
+                       "- Customizable appearance with background images\n"
+                       "- Font and color customization\n"
+                       "- Window transparency support");
+}
+
+void MainWindow::onSettingsChanged()
+{
+    AppSettings* settings = AppSettings::instance();
+    setWindowOpacity(settings->terminalOpacity());
 }
 
 void MainWindow::onTabCloseRequested(int index)
@@ -354,6 +402,9 @@ void MainWindow::setupUi()
     m_tabWidget->setTabsClosable(true);
     m_tabWidget->setMovable(true);
 
+    // Set size policy to expand with window
+    m_tabWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+
     setCentralWidget(m_tabWidget);
 
     connect(m_tabWidget, &QTabWidget::tabCloseRequested, this,
@@ -370,6 +421,8 @@ void MainWindow::createMenus()
     fileMenu->setObjectName("fileMenu");
     fileMenu->addAction(m_newConnectionAction);
     fileMenu->addAction(m_closeTabAction);
+    fileMenu->addSeparator();
+    fileMenu->addAction(m_preferencesAction);
     fileMenu->addSeparator();
     fileMenu->addAction(m_exitAction);
 
@@ -412,6 +465,11 @@ void MainWindow::createActions()
     m_pasteAction->setShortcut(QKeySequence::Paste);
     connect(m_pasteAction, &QAction::triggered, this, &MainWindow::onPaste);
 
+    m_preferencesAction = new QAction("&Preferences...", this);
+    m_preferencesAction->setObjectName("preferencesAction");
+    m_preferencesAction->setShortcut(QKeySequence::Preferences);
+    connect(m_preferencesAction, &QAction::triggered, this, &MainWindow::onPreferences);
+
     m_aboutAction = new QAction("&About", this);
     m_aboutAction->setObjectName("aboutAction");
     connect(m_aboutAction, &QAction::triggered, this, &MainWindow::onAbout);
@@ -419,7 +477,87 @@ void MainWindow::createActions()
 
 void MainWindow::createStatusBar()
 {
+    // Quick connect widgets
+    QWidget* quickConnectWidget = new QWidget(this);
+    QHBoxLayout* quickConnectLayout = new QHBoxLayout(quickConnectWidget);
+    quickConnectLayout->setContentsMargins(0, 0, 0, 0);
+
+    QLabel* quickConnectLabel = new QLabel("Quick Connect:");
+    QLineEdit* hostEdit = new QLineEdit();
+    hostEdit->setPlaceholderText("user@host:port");
+    hostEdit->setMaximumWidth(200);
+    hostEdit->setObjectName("quickConnectEdit");
+
+    QPushButton* quickConnectBtn = new QPushButton("Connect");
+    quickConnectBtn->setMaximumWidth(80);
+
+    quickConnectLayout->addWidget(quickConnectLabel);
+    quickConnectLayout->addWidget(hostEdit);
+    quickConnectLayout->addWidget(quickConnectBtn);
+
+    statusBar()->addPermanentWidget(quickConnectWidget);
     statusBar()->showMessage("Ready");
+
+    // Connect quick connect button
+    connect(quickConnectBtn, &QPushButton::clicked, [this, hostEdit]() {
+        QString input = hostEdit->text().trimmed();
+        if (input.isEmpty()) {
+            return;
+        }
+
+        // Parse input: user@host or user@host:port
+        QString username, hostname;
+        int port = 22;
+
+        int atPos = input.indexOf('@');
+        if (atPos < 0) {
+            // No username, use current user
+            hostname = input;
+            username = qgetenv("USER");
+            if (username.isEmpty()) {
+                username = qgetenv("USERNAME"); // Windows
+            }
+        } else {
+            username = input.left(atPos);
+            QString hostPart = input.mid(atPos + 1);
+
+            int colonPos = hostPart.indexOf(':');
+            if (colonPos >= 0) {
+                hostname = hostPart.left(colonPos);
+                port = hostPart.mid(colonPos + 1).toInt();
+                if (port <= 0 || port > 65535) {
+                    port = 22;
+                }
+            } else {
+                hostname = hostPart;
+            }
+        }
+
+        // Create connection profile
+        ConnectionProfile profile(hostname, hostname, port, username);
+
+        // Show connection dialog with pre-filled data
+        ConnectionDialog dialog(this);
+        dialog.setProfile(profile);
+
+        if (dialog.exec() == QDialog::Accepted) {
+            ConnectionProfile finalProfile = dialog.getProfile();
+            QString password;
+
+            if (finalProfile.authMethod() == ConnectionProfile::AuthMethod::Password) {
+                QLineEdit* passwordEdit = dialog.findChild<QLineEdit*>("passwordEdit");
+                if (passwordEdit) {
+                    password = passwordEdit->text();
+                }
+            }
+
+            handleConnectionRequest(finalProfile, password);
+            hostEdit->clear();
+        }
+    });
+
+    // Connect on Enter key
+    connect(hostEdit, &QLineEdit::returnPressed, quickConnectBtn, &QPushButton::click);
 }
 
 void MainWindow::setupConnections()
@@ -434,7 +572,10 @@ void MainWindow::showWelcomeTab()
     }
 
     m_welcomeWidget = new QWidget(this);
+    m_welcomeWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+
     QVBoxLayout* layout = new QVBoxLayout(m_welcomeWidget);
+    layout->setContentsMargins(20, 20, 20, 20);
 
     QLabel* titleLabel = new QLabel("Welcome to SSH Client", m_welcomeWidget);
     QFont titleFont = titleLabel->font();
@@ -442,30 +583,37 @@ void MainWindow::showWelcomeTab()
     titleFont.setBold(true);
     titleLabel->setFont(titleFont);
     titleLabel->setAlignment(Qt::AlignCenter);
+    titleLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
 
     QLabel* infoLabel = new QLabel("Click 'New Connection' or press Ctrl+N to connect to a server", m_welcomeWidget);
     infoLabel->setAlignment(Qt::AlignCenter);
     infoLabel->setStyleSheet("color: gray; font-size: 14px;");
+    infoLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    infoLabel->setWordWrap(true);
 
     // Add a button for quick access
     QPushButton* newConnBtn = new QPushButton("New Connection", m_welcomeWidget);
     newConnBtn->setMinimumSize(200, 50);
+    newConnBtn->setMaximumSize(300, 60);
+    newConnBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     newConnBtn->setStyleSheet("QPushButton { font-size: 16px; padding: 10px; }");
     connect(newConnBtn, &QPushButton::clicked, this, &MainWindow::onNewConnection);
 
     // Saved connections section
     QLabel* savedLabel = new QLabel("Saved Connections:", m_welcomeWidget);
     savedLabel->setStyleSheet("font-size: 16px; font-weight: bold;");
+    savedLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
 
     m_savedConnectionsList = new QListWidget(m_welcomeWidget);
-    m_savedConnectionsList->setMaximumHeight(200);
+    m_savedConnectionsList->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    m_savedConnectionsList->setMinimumHeight(150);
     m_savedConnectionsList->setStyleSheet("QListWidget { font-size: 14px; }");
     connect(m_savedConnectionsList, &QListWidget::itemDoubleClicked, this, &MainWindow::onSavedConnectionClicked);
 
     // Load saved profiles
     loadSavedProfiles();
 
-    layout->addStretch();
+    layout->addStretch(1);
     layout->addWidget(titleLabel);
     layout->addSpacing(20);
     layout->addWidget(infoLabel);
@@ -475,7 +623,7 @@ void MainWindow::showWelcomeTab()
     layout->addWidget(savedLabel);
     layout->addSpacing(10);
     layout->addWidget(m_savedConnectionsList);
-    layout->addStretch();
+    layout->addStretch(1);
 
     int index = m_tabWidget->addTab(m_welcomeWidget, "Welcome");
 
@@ -539,6 +687,13 @@ void MainWindow::saveCurrentProfile(const ConnectionProfile& profile)
 
     if (m_profileStorage->saveProfile(profile)) {
         qInfo(ui) << "Profile saved:" << profile.profileName();
+
+        // Add to recent connections
+        AppSettings::instance()->addRecentConnection(profile.profileName());
+        AppSettings::instance()->save();
+
+        // Reload saved profiles list
+        loadSavedProfiles();
     } else {
         qWarning(ui) << "Failed to save profile:" << profile.profileName();
     }

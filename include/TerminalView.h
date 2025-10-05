@@ -5,6 +5,8 @@
 #include <QWidget>
 #include <QFont>
 #include <QTimer>
+#include <QPixmap>
+#include <QColor>
 
 class TerminalView : public QWidget {
     Q_OBJECT
@@ -24,6 +26,12 @@ public:
 
     // Buffer operations
     void clearDisplay();
+
+    // Appearance settings
+    void setBackgroundImage(const QString& imagePath);
+    void setBackgroundImageOpacity(double opacity);
+    void setCustomFont(const QFont& font);
+    void setCustomColors(const QColor& fg, const QColor& bg);
 
     // Emulator access
     TerminalEmulator& emulator() { return m_emulator; }
@@ -45,11 +53,13 @@ protected:
 
 private slots:
     void blinkCursor();
+    void onSettingsChanged();
 
 private:
     void setupTerminal();
     void setupFont();
     void calculateMetrics();
+    void loadBackgroundImage(const QString& path);
     QString keyEventToString(QKeyEvent* event);
     QRect getCellRect(int row, int col) const;
 
@@ -64,6 +74,14 @@ private:
     QTimer* m_cursorTimer;
     bool m_cursorVisible;
     bool m_hasFocus;
+
+    // Appearance
+    QPixmap m_backgroundImage;
+    QString m_backgroundImagePath;
+    double m_backgroundImageOpacity;
+    QColor m_customForeground;
+    QColor m_customBackground;
+    bool m_useCustomColors;
 };
 
 #endif // TERMINALVIEW_H

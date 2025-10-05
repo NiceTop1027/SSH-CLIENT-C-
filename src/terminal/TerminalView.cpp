@@ -1,4 +1,5 @@
 #include "TerminalView.h"
+#include "AppSettings.h"
 #include <QPainter>
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -16,6 +17,10 @@ TerminalView::TerminalView(QWidget* parent)
     , m_columns(80)
     , m_cursorVisible(true)
     , m_hasFocus(false)
+    , m_backgroundImageOpacity(0.3)
+    , m_customForeground(Qt::white)
+    , m_customBackground(Qt::black)
+    , m_useCustomColors(false)
 {
     setupTerminal();
     setupFont();
@@ -28,6 +33,19 @@ TerminalView::TerminalView(QWidget* parent)
     setFocusPolicy(Qt::StrongFocus);
     setAttribute(Qt::WA_OpaquePaintEvent);
     setAttribute(Qt::WA_NoSystemBackground);
+
+    // Set size policy to expand with window
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+
+    // Connect to settings changes
+    connect(AppSettings::instance(), &AppSettings::settingsChanged, this, &TerminalView::onSettingsChanged);
+    connect(AppSettings::instance(), &AppSettings::backgroundImageChanged, this, [this](const QString& path) {
+        loadBackgroundImage(path);
+        update();
+    });
+
+    // Load initial settings
+    onSettingsChanged();
 }
 
 TerminalView::~TerminalView()
@@ -63,8 +81,9 @@ void TerminalView::calculateMetrics()
     m_charWidth = fm.horizontalAdvance('M');
     m_charHeight = fm.height();
 
-    int minWidth = m_charWidth * m_columns;
-    int minHeight = m_charHeight * m_rows;
+    // Set minimum size to accommodate at least 24 rows x 80 columns
+    int minWidth = m_charWidth * 80;
+    int minHeight = m_charHeight * 24;
     setMinimumSize(minWidth, minHeight);
 }
 
@@ -113,19 +132,38 @@ void TerminalView::paintEvent(QPaintEvent*)
 
     const TerminalScreen& screen = m_emulator.screen();
 
+    // Draw background image if set
+    if (!m_backgroundImage.isNull()) {
+        painter.setOpacity(m_backgroundImageOpacity);
+        QPixmap scaled = m_backgroundImage.scaled(size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+
+        // Center the image
+        int x = (width() - scaled.width()) / 2;
+        int y = (height() - scaled.height()) / 2;
+        painter.drawPixmap(x, y, scaled);
+        painter.setOpacity(1.0);
+    }
+
+    // Get default colors
+    QColor defaultBg = m_useCustomColors ? m_customBackground : QColor(0, 0, 0);
+    QColor defaultFg = m_useCustomColors ? m_customForeground : QColor(170, 170, 170);
+
     // Draw all cells
     for (int row = 0; row < m_rows; ++row) {
         for (int col = 0; col < m_columns; ++col) {
             const TerminalScreen::Cell& cell = screen.cellAt(row, col);
             QRect cellRect = getCellRect(row, col);
 
-            // Draw background
-            QColor bgColor = cell.bgColor.isValid() ? cell.bgColor : QColor(0, 0, 0);
+            // Draw background (with transparency if background image is set)
+            QColor bgColor = cell.bgColor.isValid() ? cell.bgColor : defaultBg;
+            if (!m_backgroundImage.isNull() && !cell.bgColor.isValid()) {
+                bgColor.setAlpha(200); // Semi-transparent for background image visibility
+            }
             painter.fillRect(cellRect, bgColor);
 
             // Draw character
             if (cell.character != ' ' && cell.character != QChar(0)) {
-                QColor fgColor = cell.fgColor.isValid() ? cell.fgColor : QColor(170, 170, 170);
+                QColor fgColor = cell.fgColor.isValid() ? cell.fgColor : defaultFg;
                 painter.setPen(fgColor);
 
                 QFont font = m_font;
@@ -146,12 +184,12 @@ void TerminalView::paintEvent(QPaintEvent*)
 
         if (cursorRow >= 0 && cursorRow < m_rows && cursorCol >= 0 && cursorCol < m_columns) {
             QRect cursorRect = getCellRect(cursorRow, cursorCol);
-            painter.fillRect(cursorRect, QColor(170, 170, 170));
+            painter.fillRect(cursorRect, defaultFg);
 
             // Redraw character in inverse color
             const TerminalScreen::Cell& cell = screen.cellAt(cursorRow, cursorCol);
             if (cell.character != ' ' && cell.character != QChar(0)) {
-                painter.setPen(QColor(0, 0, 0));
+                painter.setPen(defaultBg);
                 painter.drawText(cursorRect, Qt::AlignLeft | Qt::AlignTop, QString(cell.character));
             }
         }
@@ -325,4 +363,76 @@ QRect TerminalView::getCellRect(int row, int col) const
     int x = col * m_charWidth;
     int y = row * m_charHeight;
     return QRect(x, y, m_charWidth, m_charHeight);
+}
+
+void TerminalView::setBackgroundImage(const QString& imagePath)
+{
+    loadBackgroundImage(imagePath);
+    update();
+}
+
+void TerminalView::setBackgroundImageOpacity(double opacity)
+{
+    m_backgroundImageOpacity = qBound(0.0, opacity, 1.0);
+    update();
+}
+
+void TerminalView::setCustomFont(const QFont& font)
+{
+    m_font = font;
+    m_font.setFixedPitch(true);
+    m_font.setStyleHint(QFont::Monospace);
+    calculateMetrics();
+    update();
+}
+
+void TerminalView::setCustomColors(const QColor& fg, const QColor& bg)
+{
+    m_customForeground = fg;
+    m_customBackground = bg;
+    m_useCustomColors = true;
+
+    // Update palette
+    QPalette p = palette();
+    p.setColor(QPalette::Window, bg);
+    setPalette(p);
+
+    update();
+}
+
+void TerminalView::loadBackgroundImage(const QString& path)
+{
+    m_backgroundImagePath = path;
+
+    if (path.isEmpty()) {
+        m_backgroundImage = QPixmap();
+    } else {
+        m_backgroundImage.load(path);
+        if (m_backgroundImage.isNull()) {
+            qWarning() << "Failed to load background image:" << path;
+        }
+    }
+}
+
+void TerminalView::onSettingsChanged()
+{
+    AppSettings* settings = AppSettings::instance();
+
+    // Load background image
+    QString bgImage = settings->terminalBackgroundImage();
+    if (bgImage != m_backgroundImagePath) {
+        loadBackgroundImage(bgImage);
+    }
+
+    // Load opacity
+    m_backgroundImageOpacity = settings->backgroundImageOpacity();
+
+    // Load font
+    QFont font(settings->terminalFontFamily(), settings->terminalFontSize());
+    setCustomFont(font);
+
+    // Load colors
+    setCustomColors(settings->terminalForegroundColor(), settings->terminalBackgroundColor());
+
+    update();
 }

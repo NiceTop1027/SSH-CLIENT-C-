@@ -174,54 +174,68 @@ void ConnectionDialog::onCancel()
 void ConnectionDialog::setupUi()
 {
     QVBoxLayout* mainLayout = new QVBoxLayout(this);
+    mainLayout->setContentsMargins(15, 15, 15, 15);
+    mainLayout->setSpacing(15);
 
     // Connection details group
     QGroupBox* connectionGroup = new QGroupBox("Connection Details");
+    connectionGroup->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     QFormLayout* formLayout = new QFormLayout(connectionGroup);
+    formLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     m_profileNameEdit = new QLineEdit();
     m_profileNameEdit->setPlaceholderText("Optional profile name");
+    m_profileNameEdit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     formLayout->addRow("Profile Name:", m_profileNameEdit);
 
     m_hostnameEdit = new QLineEdit();
     m_hostnameEdit->setObjectName("hostnameEdit");
     m_hostnameEdit->setPlaceholderText("example.com or 192.168.1.100");
+    m_hostnameEdit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     formLayout->addRow("Hostname:", m_hostnameEdit);
 
     m_portSpin = new QSpinBox();
     m_portSpin->setObjectName("portSpin");
     m_portSpin->setRange(1, 65535);
     m_portSpin->setValue(22);
+    m_portSpin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     formLayout->addRow("Port:", m_portSpin);
 
     m_usernameEdit = new QLineEdit();
     m_usernameEdit->setObjectName("usernameEdit");
     m_usernameEdit->setPlaceholderText("username");
+    m_usernameEdit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     formLayout->addRow("Username:", m_usernameEdit);
 
     mainLayout->addWidget(connectionGroup);
 
     // Authentication group
     QGroupBox* authGroup = new QGroupBox("Authentication");
+    authGroup->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     QFormLayout* authLayout = new QFormLayout(authGroup);
+    authLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     m_authMethodCombo = new QComboBox();
     m_authMethodCombo->setObjectName("authMethodCombo");
     m_authMethodCombo->addItem("Password");
     m_authMethodCombo->addItem("Public Key");
+    m_authMethodCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     authLayout->addRow("Method:", m_authMethodCombo);
 
     m_passwordEdit = new QLineEdit();
     m_passwordEdit->setObjectName("passwordEdit");
     m_passwordEdit->setEchoMode(QLineEdit::Password);
     m_passwordEdit->setPlaceholderText("Enter password");
+    m_passwordEdit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     authLayout->addRow("Password:", m_passwordEdit);
 
     QHBoxLayout* keyLayout = new QHBoxLayout();
     m_keyFileEdit = new QLineEdit();
     m_keyFileEdit->setObjectName("keyFileEdit");
     m_keyFileEdit->setPlaceholderText("/path/to/private/key");
+    m_keyFileEdit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_browseButton = new QPushButton("Browse...");
+    m_browseButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     keyLayout->addWidget(m_keyFileEdit);
     keyLayout->addWidget(m_browseButton);
     authLayout->addRow("Key File:", keyLayout);
@@ -235,13 +249,18 @@ void ConnectionDialog::setupUi()
     m_connectButton = new QPushButton("Connect");
     m_connectButton->setObjectName("connectButton");
     m_connectButton->setDefault(true);
+    m_connectButton->setMinimumWidth(100);
     buttonLayout->addWidget(m_connectButton);
 
     m_cancelButton = new QPushButton("Cancel");
     m_cancelButton->setObjectName("cancelButton");
+    m_cancelButton->setMinimumWidth(100);
     buttonLayout->addWidget(m_cancelButton);
 
     mainLayout->addLayout(buttonLayout);
+
+    // Set minimum dialog size
+    setMinimumSize(400, 300);
 
     // Initial UI state
     updateAuthUI();

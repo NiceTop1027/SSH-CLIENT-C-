@@ -40,9 +40,11 @@ private slots:
     void onExit();
     void onCopy();
     void onPaste();
+    void onPreferences();
     void onAbout();
     void onTabCloseRequested(int index);
     void onSavedConnectionClicked(QListWidgetItem* item);
+    void onSettingsChanged();
 
     // Connection handling
     void handleConnectionRequest(const ConnectionProfile& profile, const QString& password = QString());
@@ -73,6 +75,7 @@ private:
     QAction* m_exitAction;
     QAction* m_copyAction;
     QAction* m_pasteAction;
+    QAction* m_preferencesAction;
     QAction* m_aboutAction;
 
     // Connection management
