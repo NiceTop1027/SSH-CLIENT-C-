@@ -58,7 +58,7 @@ jobs:
 
     - name: Install libssh via vcpkg
       run: |
-        vcpkg install libssh
+        vcpkg install libssh:x64-windows
         vcpkg integrate install
 
     - name: Setup MSVC
@@ -69,17 +69,24 @@ jobs:
         mkdir build
         cd build
         cmake .. -DCMAKE_BUILD_TYPE=Release -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DENABLE_TESTING=OFF
+      shell: cmd
 
     - name: Build
       run: |
         cd build
-        cmake --build . --config Release
+        cmake --build . --config Release --target ssh-client
+      shell: cmd
 
     - name: Package
       run: |
         cd build/Release
-        windeployqt ssh-client.exe
-        Compress-Archive -Path * -DestinationPath ../../ssh-client-windows.zip
+        if (Test-Path ssh-client.exe) {
+          windeployqt ssh-client.exe
+          Compress-Archive -Path * -DestinationPath ../../ssh-client-windows.zip
+        } else {
+          Write-Error "ssh-client.exe not found"
+          exit 1
+        }
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
