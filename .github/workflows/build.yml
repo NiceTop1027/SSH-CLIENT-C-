@@ -40,7 +40,7 @@ jobs:
         mv ssh-client.dmg ssh-client-macos.dmg
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: ssh-client-macos
         path: build/ssh-client-macos.dmg
@@ -81,7 +81,7 @@ jobs:
         Compress-Archive -Path * -DestinationPath ../../ssh-client-windows.zip
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: ssh-client-windows
         path: ssh-client-windows.zip
@@ -117,7 +117,7 @@ jobs:
         mv SSH_Client*.AppImage ssh-client-linux.AppImage
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: ssh-client-linux
         path: build/ssh-client-linux.AppImage
