@@ -1,0 +1,89 @@
+# Build directories
+build/
+build-*/
+cmake-build-*/
+out/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Testing/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+
+# Qt
+*.pro.user
+*.pro.user.*
+*.qbs.user
+*.qbs.user.*
+*.moc
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+*.qm
+.qmake.cache
+.qmake.stash
+*.autosave
+
+# C++
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
+*.a
+*.lib
+*.exp
+*.pdb
+*.ilk
+
+# Compiled Object files
+*.slo
+*.lo
+*.ko
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Executables
+ssh-client
+ssh-client.exe
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Package files
+*.deb
+*.rpm
+*.dmg
+*.zip
+*.tar.gz
+_CPack_Packages/
+
+# Logs
+*.log
+
+# Test results
+Testing/
+test_results/
