@@ -39,8 +39,12 @@ jobs:
     - name: Create DMG
       run: |
         cd build
+        # Remove quarantine attributes before packaging
+        xattr -cr ssh-client.app
         macdeployqt ssh-client.app -dmg
         mv ssh-client.dmg ssh-client-macos.dmg
+        # Remove quarantine from DMG as well
+        xattr -cr ssh-client-macos.dmg || true
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4

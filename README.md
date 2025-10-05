@@ -15,13 +15,17 @@ Download the latest release for your platform:
 1. Download `ssh-client-macos.dmg`
 2. Open the DMG file
 3. Drag SSH Client to Applications folder
-4. **Important**: Remove quarantine attribute:
+4. **If you see "damaged" or "can't be opened" error**, remove quarantine attribute:
    ```bash
    xattr -cr /Applications/ssh-client.app
    ```
+   Or for the DMG file:
+   ```bash
+   xattr -cr ~/Downloads/ssh-client-macos.dmg
+   ```
 5. Launch from Applications
 
-If you see "damaged" error, run the command in step 4.
+**Note**: This app is not code-signed. macOS Gatekeeper may block it initially.
 
 ## ✨ Features
 
