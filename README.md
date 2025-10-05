@@ -10,6 +10,19 @@ Download the latest release for your platform:
 - **Windows**: [ssh-client-windows.zip](https://github.com/NiceTop1027/SSH-CLIENT-C-/releases/latest/download/ssh-client-windows.zip) (Coming soon via GitHub Actions)
 - **Linux**: [ssh-client-linux.AppImage](https://github.com/NiceTop1027/SSH-CLIENT-C-/releases/latest/download/ssh-client-linux.AppImage) (Coming soon via GitHub Actions)
 
+### macOS Installation
+
+1. Download `ssh-client-macos.dmg`
+2. Open the DMG file
+3. Drag SSH Client to Applications folder
+4. **Important**: Remove quarantine attribute:
+   ```bash
+   xattr -cr /Applications/ssh-client.app
+   ```
+5. Launch from Applications
+
+If you see "damaged" error, run the command in step 4.
+
 ## ✨ Features
 
 - **Full Terminal Emulation**: Complete VT100/xterm-256color support with vi/vim compatibility
