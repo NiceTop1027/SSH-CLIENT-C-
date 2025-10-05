@@ -20,17 +20,22 @@ else()
 endif()
 
 # Find libssh
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(LIBSSH REQUIRED libssh)
+if(WIN32)
+    # On Windows, use vcpkg's find_package
+    find_package(libssh CONFIG REQUIRED)
+    set(LIBSSH_LIBRARIES ssh)
+else()
+    # On Unix-like systems, use pkg-config
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(LIBSSH REQUIRED libssh)
+    link_directories(${LIBSSH_LIBRARY_DIRS})
+endif()
 
 # Include directories
 include_directories(
     ${CMAKE_SOURCE_DIR}/include
     ${LIBSSH_INCLUDE_DIRS}
 )
-
-# Link directories
-link_directories(${LIBSSH_LIBRARY_DIRS})
 
 # Compiler flags
 if(MSVC)
