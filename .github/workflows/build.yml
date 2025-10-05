@@ -101,44 +101,8 @@ jobs:
         name: ssh-client-windows
         path: ssh-client-windows.zip
 
-  build-linux:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v3
-
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y qt6-base-dev libssh-dev cmake build-essential
-
-    - name: Configure CMake
-      run: |
-        mkdir build
-        cd build
-        cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTING=OFF
-
-    - name: Build
-      run: |
-        cd build
-        make -j$(nproc) ssh-client
-
-    - name: Package AppImage
-      run: |
-        cd build
-        wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-        wget https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
-        chmod +x linuxdeploy*.AppImage
-        ./linuxdeploy-x86_64.AppImage --appdir AppDir --executable ssh-client --plugin qt --output appimage
-        mv SSH_Client*.AppImage ssh-client-linux.AppImage || mv ssh-client*.AppImage ssh-client-linux.AppImage
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: ssh-client-linux
-        path: build/ssh-client-linux.AppImage
-
   release:
-    needs: [build-macos, build-windows, build-linux]
+    needs: [build-macos, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
 
@@ -152,7 +116,6 @@ jobs:
         files: |
           ssh-client-macos/ssh-client-macos.dmg
           ssh-client-windows/ssh-client-windows.zip
-          ssh-client-linux/ssh-client-linux.AppImage
         draft: false
         prerelease: false
       env:
