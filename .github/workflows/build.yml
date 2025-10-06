@@ -40,11 +40,18 @@ jobs:
       run: |
         cd build
         # Remove quarantine attributes before packaging
-        xattr -cr ssh-client.app
-        macdeployqt ssh-client.app -dmg
+        xattr -cr ssh-client.app || true
+        find ssh-client.app -type f -exec xattr -d com.apple.quarantine {} \; 2>/dev/null || true
+
+        # Deploy Qt dependencies
+        $(brew --prefix qt@6)/bin/macdeployqt ssh-client.app -dmg
+
+        # Rename and remove quarantine from DMG
         mv ssh-client.dmg ssh-client-macos.dmg
-        # Remove quarantine from DMG as well
         xattr -cr ssh-client-macos.dmg || true
+
+        # Sign with ad-hoc signature to avoid Gatekeeper issues
+        codesign --force --deep --sign - ssh-client-macos.dmg || true
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -118,5 +125,25 @@ jobs:
           ssh-client-windows/ssh-client-windows.zip
         draft: false
         prerelease: false
+        body: |
+          ## Installation
+
+          ### macOS
+          1. Download `ssh-client-macos.dmg`
+          2. Open the DMG file
+          3. Drag SSH Client to Applications folder
+          4. **First Launch**: Right-click the app and select "Open" (or run: `xattr -cr /Applications/ssh-client.app`)
+
+          ### Windows
+          1. Download `ssh-client-windows.zip`
+          2. Extract the ZIP file
+          3. Run `ssh-client.exe`
+
+          ## Features
+          - Multiple SSH connections with tabs
+          - Split view (horizontal/vertical)
+          - Saved connections management
+          - Custom terminal appearance
+          - Drag-and-drop tabs
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
