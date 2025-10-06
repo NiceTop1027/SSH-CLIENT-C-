@@ -1,12 +1,16 @@
 #include "TerminalWidget.h"
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QContextMenuEvent>
+#include <QMenu>
 #include <QTextCursor>
 #include <QTextCharFormat>
 #include <QScrollBar>
 #include <QApplication>
 #include <QClipboard>
 #include <QRegularExpression>
+#include <QPainter>
+#include <QTimer>
 
 TerminalWidget::TerminalWidget(QWidget* parent)
     : QTextEdit(parent), m_rows(24), m_columns(80), m_enableFileColoring(true)
@@ -28,11 +32,29 @@ void TerminalWidget::setupTerminal()
     setUndoRedoEnabled(false);
     setAcceptRichText(false);
 
+    // Enable text selection with mouse
+    setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
+
     // Set background and foreground colors
     QPalette p = palette();
     p.setColor(QPalette::Base, QColor(0, 0, 0));
     p.setColor(QPalette::Text, QColor(170, 170, 170));
+
+    // Set selection colors for better visibility
+    p.setColor(QPalette::Highlight, QColor(51, 153, 255));
+    p.setColor(QPalette::HighlightedText, QColor(255, 255, 255));
     setPalette(p);
+
+    // Enable proper opaque rendering to prevent ghosting
+    setAttribute(Qt::WA_OpaquePaintEvent, true);
+    setAutoFillBackground(true);
+
+    // Optimize viewport updates - opaque to prevent transparency artifacts
+    viewport()->setAttribute(Qt::WA_OpaquePaintEvent, true);
+    viewport()->setAutoFillBackground(true);
+
+    // Enable mouse tracking for better selection
+    setMouseTracking(true);
 
     // Set initial buffer dimensions
     m_buffer = TerminalBuffer(m_rows, m_columns);
@@ -59,14 +81,22 @@ void TerminalWidget::displayOutput(const QString& text)
         return;
     }
 
+    // Batch updates to reduce paint events
+    setUpdatesEnabled(false);
+
     // Check for clear screen command
     if (text.contains("\x1b[2J") || text.contains("\x1b[H\x1b[2J")) {
+        // Force complete clear with immediate repaint
         clear();
+        viewport()->update();
+        repaint();
+
         // Remove the clear sequence from text
         QString remaining = text;
         remaining.remove("\x1b[2J");
         remaining.remove("\x1b[H");
         if (remaining.trimmed().isEmpty()) {
+            setUpdatesEnabled(true);
             return;
         }
     }
@@ -113,6 +143,7 @@ void TerminalWidget::displayOutput(const QString& text)
     auto tokens = parseAnsiWithColors(processedText);
 
     QTextCursor cursor = textCursor();
+    cursor.beginEditBlock();
     cursor.movePosition(QTextCursor::End);
 
     // Process each token with its formatting
@@ -155,7 +186,10 @@ void TerminalWidget::displayOutput(const QString& text)
         }
     }
 
+    cursor.endEditBlock();
     setTextCursor(cursor);
+
+    setUpdatesEnabled(true);
     ensureCursorVisible();
 }
 
@@ -381,8 +415,15 @@ int TerminalWidget::columns() const
 
 void TerminalWidget::clearDisplay()
 {
+    // Force immediate update to prevent ghosting
+    setUpdatesEnabled(false);
     clear();
     m_buffer.clear();
+
+    // Force complete repaint with background
+    viewport()->update();
+    setUpdatesEnabled(true);
+    repaint();
 }
 
 void TerminalWidget::setMaxScrollback(int lines)
@@ -392,6 +433,30 @@ void TerminalWidget::setMaxScrollback(int lines)
 
 void TerminalWidget::keyPressEvent(QKeyEvent* event)
 {
+    // Allow Cmd+C for copy on macOS
+    if (event->matches(QKeySequence::Copy)) {
+        copy();
+        event->accept();
+        return;
+    }
+
+    // Allow Cmd+V for paste on macOS
+    if (event->matches(QKeySequence::Paste)) {
+        QString clipText = QApplication::clipboard()->text();
+        if (!clipText.isEmpty()) {
+            emit sendData(clipText);
+        }
+        event->accept();
+        return;
+    }
+
+    // Allow Cmd+A for select all on macOS
+    if (event->matches(QKeySequence::SelectAll)) {
+        selectAll();
+        event->accept();
+        return;
+    }
+
     handleKeyInput(event);
     event->accept();
 }
@@ -415,16 +480,40 @@ void TerminalWidget::resizeEvent(QResizeEvent* event)
 
 void TerminalWidget::mousePressEvent(QMouseEvent* event)
 {
-    QTextEdit::mousePressEvent(event);
+    // Enable text selection with mouse
+    if (event->button() == Qt::LeftButton) {
+        QTextEdit::mousePressEvent(event);
+    } else if (event->button() == Qt::RightButton) {
+        // Right click for context menu (copy/paste)
+        if (textCursor().hasSelection()) {
+            copy();
+        } else {
+            // Paste if no selection
+            QString clipText = QApplication::clipboard()->text();
+            if (!clipText.isEmpty()) {
+                emit sendData(clipText);
+            }
+        }
+        event->accept();
+    } else {
+        QTextEdit::mousePressEvent(event);
+    }
 }
 
 void TerminalWidget::mouseReleaseEvent(QMouseEvent* event)
 {
+    if (event->button() == Qt::LeftButton) {
+        // Auto-copy on selection (like traditional terminals)
+        if (textCursor().hasSelection()) {
+            copy();
+        }
+    }
     QTextEdit::mouseReleaseEvent(event);
 }
 
 void TerminalWidget::mouseMoveEvent(QMouseEvent* event)
 {
+    // Allow drag selection
     QTextEdit::mouseMoveEvent(event);
 }
 
@@ -636,4 +725,48 @@ void TerminalWidget::setFileColoringEnabled(bool enabled)
 bool TerminalWidget::isFileColoringEnabled() const
 {
     return m_enableFileColoring;
+}
+
+void TerminalWidget::contextMenuEvent(QContextMenuEvent* event)
+{
+    QMenu* menu = new QMenu(this);
+
+    QAction* copyAction = menu->addAction("Copy");
+    copyAction->setShortcut(QKeySequence::Copy);
+    copyAction->setEnabled(textCursor().hasSelection());
+    connect(copyAction, &QAction::triggered, this, &TerminalWidget::copy);
+
+    QAction* pasteAction = menu->addAction("Paste");
+    pasteAction->setShortcut(QKeySequence::Paste);
+    pasteAction->setEnabled(!QApplication::clipboard()->text().isEmpty());
+    connect(pasteAction, &QAction::triggered, this, [this]() {
+        QString clipText = QApplication::clipboard()->text();
+        if (!clipText.isEmpty()) {
+            emit sendData(clipText);
+        }
+    });
+
+    menu->addSeparator();
+
+    QAction* selectAllAction = menu->addAction("Select All");
+    selectAllAction->setShortcut(QKeySequence::SelectAll);
+    connect(selectAllAction, &QAction::triggered, this, &TerminalWidget::selectAll);
+
+    menu->addSeparator();
+
+    QAction* clearAction = menu->addAction("Clear");
+    connect(clearAction, &QAction::triggered, this, &TerminalWidget::clearDisplay);
+
+    menu->exec(event->globalPos());
+    delete menu;
+}
+
+void TerminalWidget::paintEvent(QPaintEvent* event)
+{
+    // Fill background completely to prevent ghosting
+    QPainter painter(viewport());
+    painter.fillRect(event->rect(), QColor(0, 0, 0));
+
+    // Call base implementation with optimized rendering
+    QTextEdit::paintEvent(event);
 }

@@ -3,12 +3,13 @@
 
 #include "ConnectionProfile.h"
 #include "TerminalView.h"
-// #include "ProfileStorage.h"  // Not used anymore, using JSON files directly
-#include "SplitContainer.h"
+#include "ProfileStorage.h"
+#include "SplitView.h"
 #include <QMainWindow>
-#include <QTabWidget>
 #include <QAction>
 #include <QListWidget>
+
+class CustomTabWidget;
 
 class SSHConnection;
 class SSHWorkerThread;
@@ -26,8 +27,12 @@ public:
     void closeCurrentTab();
     TerminalView* currentTerminal();
 
+    // Split management
+    void splitHorizontally();
+    void splitVertically();
+
     // UI access
-    QTabWidget* tabWidget() const;
+    CustomTabWidget* tabWidget() const;
 
     // Status
     void showStatusMessage(const QString& message, int timeout = 3000);
@@ -46,13 +51,14 @@ private slots:
     void onTabCloseRequested(int index);
     void onSavedConnectionClicked(QListWidgetItem* item);
     void onSettingsChanged();
+    void onTabDroppedOnTab(int draggedIndex, int targetIndex);
 
     // Connection handling
     void handleConnectionRequest(const ConnectionProfile& profile, const QString& password = QString());
-    void handleConnected(int tabIndex);
+    void handleConnected();
     void handleDisconnected();
     void handleError(const QString& error);
-    void handleDataReceived(int tabIndex, const QByteArray& data);
+    void handleDataReceived(const QByteArray& data);
 
 private:
     void setupUi();
@@ -66,7 +72,7 @@ private:
     void saveCurrentProfile(const ConnectionProfile& profile);
 
     // UI components
-    QTabWidget* m_tabWidget;
+    CustomTabWidget* m_tabWidget;
     QWidget* m_welcomeWidget;
     QListWidget* m_savedConnectionsList;
 
@@ -78,17 +84,19 @@ private:
     QAction* m_pasteAction;
     QAction* m_preferencesAction;
     QAction* m_aboutAction;
+    QAction* m_splitHorizontalAction;
+    QAction* m_splitVerticalAction;
 
     // Connection management
     struct TabData {
-        SplitContainer* splitContainer;
+        SplitView* splitView;
         TerminalView* terminal;
         SSHConnection* connection;
         SSHWorkerThread* worker;
     };
 
     QList<TabData> m_tabs;
-    // ProfileStorage* m_profileStorage;  // Not used anymore, using JSON files directly
+    ProfileStorage* m_profileStorage;
 };
 
 #endif // MAINWINDOW_H

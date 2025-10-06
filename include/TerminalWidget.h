@@ -32,12 +32,15 @@ public:
     void setFileColoringEnabled(bool enabled);
     bool isFileColoringEnabled() const;
 
+    // Context menu
+    void contextMenuEvent(QContextMenuEvent* event) override;
+
 signals:
     void sendData(const QString& data);
     void dimensionsChanged(int rows, int columns);
 
 protected:
-    // Event handlers
+    void paintEvent(QPaintEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;

@@ -74,6 +74,11 @@ QString ConnectionDialog::getUsername() const
     return m_usernameEdit->text();
 }
 
+QString ConnectionDialog::getPassword() const
+{
+    return m_passwordEdit->text();
+}
+
 void ConnectionDialog::setHostname(const QString& hostname)
 {
     m_hostnameEdit->setText(hostname);
@@ -143,7 +148,7 @@ bool ConnectionDialog::validate()
     return true;
 }
 
-void ConnectionDialog::onAuthMethodChanged(int index)
+void ConnectionDialog::onAuthMethodChanged(int /* index */)
 {
     updateAuthUI();
 }
@@ -173,15 +178,115 @@ void ConnectionDialog::onCancel()
 
 void ConnectionDialog::setupUi()
 {
+    setStyleSheet(R"(
+        QDialog {
+            background: #1E1E1E;
+        }
+        QGroupBox {
+            font-weight: 500;
+            color: #BDBDBD;
+            border: 1px solid #3A3A3A;
+            border-radius: 10px;
+            margin-top: 14px;
+            padding-top: 18px;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            subcontrol-position: top left;
+            padding: 0 10px;
+            color: #64B5F6;
+            font-weight: 500;
+        }
+        QLineEdit, QSpinBox {
+            background: #2A2A2A;
+            color: #E8E8E8;
+            border: 1px solid #3A3A3A;
+            border-radius: 6px;
+            padding: 10px 14px;
+            font-size: 13px;
+            selection-background-color: #1976D2;
+        }
+        QLineEdit:focus, QSpinBox:focus {
+            border: 1px solid #64B5F6;
+            background: #2F2F2F;
+        }
+        QComboBox {
+            background: #2A2A2A;
+            color: #E8E8E8;
+            border: 1px solid #3A3A3A;
+            border-radius: 6px;
+            padding: 10px 14px;
+            font-size: 13px;
+        }
+        QComboBox:focus {
+            border: 1px solid #64B5F6;
+            background: #2F2F2F;
+        }
+        QComboBox::drop-down {
+            border: none;
+            width: 30px;
+        }
+        QComboBox::down-arrow {
+            image: none;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 5px solid #9E9E9E;
+            margin-right: 8px;
+        }
+        QComboBox QAbstractItemView {
+            background: #2A2A2A;
+            color: #E8E8E8;
+            border: 1px solid #3A3A3A;
+            selection-background-color: #3A3A3A;
+            border-radius: 6px;
+        }
+        QPushButton {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                       stop:0 #42A5F5, stop:1 #1E88E5);
+            color: #FFFFFF;
+            border: none;
+            border-radius: 6px;
+            padding: 11px 26px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        QPushButton:hover {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                       stop:0 #64B5F6, stop:1 #42A5F5);
+        }
+        QPushButton:pressed {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                       stop:0 #1976D2, stop:1 #1565C0);
+        }
+        QPushButton#cancelButton {
+            background: #2A2A2A;
+            color: #9E9E9E;
+            border: 1px solid #3A3A3A;
+        }
+        QPushButton#cancelButton:hover {
+            background: #333333;
+            color: #BDBDBD;
+        }
+        QPushButton#cancelButton:pressed {
+            background: #252525;
+        }
+        QLabel {
+            color: #9E9E9E;
+            font-size: 13px;
+        }
+    )");
+
     QVBoxLayout* mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(15, 15, 15, 15);
-    mainLayout->setSpacing(15);
+    mainLayout->setContentsMargins(24, 24, 24, 24);
+    mainLayout->setSpacing(20);
 
     // Connection details group
     QGroupBox* connectionGroup = new QGroupBox("Connection Details");
     connectionGroup->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     QFormLayout* formLayout = new QFormLayout(connectionGroup);
     formLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    formLayout->setVerticalSpacing(12);
+    formLayout->setHorizontalSpacing(16);
 
     m_profileNameEdit = new QLineEdit();
     m_profileNameEdit->setPlaceholderText("Optional profile name");
@@ -260,7 +365,7 @@ void ConnectionDialog::setupUi()
     mainLayout->addLayout(buttonLayout);
 
     // Set minimum dialog size
-    setMinimumSize(400, 300);
+    setMinimumSize(480, 400);
 
     // Initial UI state
     updateAuthUI();

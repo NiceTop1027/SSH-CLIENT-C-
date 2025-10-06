@@ -23,6 +23,7 @@ public:
     QString getHostname() const;
     int getPort() const;
     QString getUsername() const;
+    QString getPassword() const;
 
     void setHostname(const QString& hostname);
     void setPort(int port);

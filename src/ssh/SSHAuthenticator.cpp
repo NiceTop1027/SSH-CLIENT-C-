@@ -9,20 +9,11 @@ SSHAuthenticator::SSHAuthenticator() : m_authMethod(AuthMethod::None)
 SSHAuthenticator::SSHAuthenticator(const ConnectionProfile& profile, const QString& password, const QString& keyPath)
     : m_authMethod(AuthMethod::None)
 {
-    // If password is provided, use password authentication only
     if (!password.isEmpty()) {
         setPassword(password);
-        return; // Don't try to load key file
-    }
-
-    // If keyPath is explicitly provided, use public key authentication
-    if (!keyPath.isEmpty()) {
+    } else if (!keyPath.isEmpty()) {
         setPrivateKeyFile(keyPath);
-        return;
-    }
-
-    // Otherwise, use profile's auth method
-    if (profile.authMethod() == ConnectionProfile::AuthMethod::Password) {
+    } else if (profile.authMethod() == ConnectionProfile::AuthMethod::Password) {
         m_authMethod = AuthMethod::Password;
     } else if (profile.authMethod() == ConnectionProfile::AuthMethod::PublicKey) {
         if (!profile.keyFilePath().isEmpty()) {

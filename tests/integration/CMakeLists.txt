@@ -19,7 +19,6 @@ add_unit_test(test_async_io
     test_async_io.cpp
 )
 
-# Disabled due to missing SSHChannel implementation
-# add_unit_test(test_e2e_connection
-#     test_e2e_connection.cpp
-# )
+add_unit_test(test_e2e_connection
+    test_e2e_connection.cpp
+)
