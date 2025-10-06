@@ -3,7 +3,8 @@
 
 #include "ConnectionProfile.h"
 #include "TerminalView.h"
-#include "ProfileStorage.h"
+// #include "ProfileStorage.h"  // Not used anymore, using JSON files directly
+#include "SplitContainer.h"
 #include <QMainWindow>
 #include <QTabWidget>
 #include <QAction>
@@ -48,10 +49,10 @@ private slots:
 
     // Connection handling
     void handleConnectionRequest(const ConnectionProfile& profile, const QString& password = QString());
-    void handleConnected();
+    void handleConnected(int tabIndex);
     void handleDisconnected();
     void handleError(const QString& error);
-    void handleDataReceived(const QByteArray& data);
+    void handleDataReceived(int tabIndex, const QByteArray& data);
 
 private:
     void setupUi();
@@ -80,13 +81,14 @@ private:
 
     // Connection management
     struct TabData {
+        SplitContainer* splitContainer;
         TerminalView* terminal;
         SSHConnection* connection;
         SSHWorkerThread* worker;
     };
 
     QList<TabData> m_tabs;
-    ProfileStorage* m_profileStorage;
+    // ProfileStorage* m_profileStorage;  // Not used anymore, using JSON files directly
 };
 
 #endif // MAINWINDOW_H

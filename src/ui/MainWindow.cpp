@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "ConnectionDialog.h"
 #include "PreferencesDialog.h"
+#include "SimplePasswordDialog.h"
 #include "AppSettings.h"
 #include "SSHConnection.h"
 #include "SSHAuthenticator.h"
@@ -8,9 +9,11 @@
 #include "Logger.h"
 #include "ErrorDialog.h"
 #include "TerminalView.h"
+#include "CredentialManager.h"
 #include <QMenuBar>
 #include <QStatusBar>
 #include <QMessageBox>
+#include <QInputDialog>
 #include <QApplication>
 #include <QClipboard>
 #include <QVBoxLayout>
@@ -18,13 +21,21 @@
 #include <QFont>
 #include <QPushButton>
 #include <QTabBar>
+#include <QPropertyAnimation>
+#include <QGraphicsOpacityEffect>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QFile>
+#include <QDir>
+#include <QStandardPaths>
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), m_tabWidget(nullptr), m_welcomeWidget(nullptr), m_savedConnectionsList(nullptr)
 {
     qInfo(ui) << "MainWindow initializing";
 
-    // Initialize profile storage
-    m_profileStorage = new ProfileStorage();
+    // Profile storage is now handled via JSON files directly
+    // m_profileStorage = new ProfileStorage();
 
     setupUi();
     createActions();
@@ -43,6 +54,64 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), m_tabWidget(nullp
         resize(1024, 768);
     }
     setMinimumSize(800, 600);
+
+    // Apply clean minimal theme
+    setStyleSheet(R"(
+        QMainWindow {
+            background: #1E1E1E;
+        }
+        QMenuBar {
+            background: #252526;
+            color: #CCCCCC;
+            border-bottom: 1px solid #3C3C3C;
+            spacing: 3px;
+        }
+        QMenuBar::item {
+            background: transparent;
+            padding: 8px 12px;
+        }
+        QMenuBar::item:selected {
+            background: #37373D;
+        }
+        QMenu {
+            background: #252526;
+            color: #CCCCCC;
+            border: 1px solid #3C3C3C;
+            padding: 4px;
+        }
+        QMenu::item {
+            padding: 6px 30px;
+            border-radius: 3px;
+        }
+        QMenu::item:selected {
+            background: #094771;
+        }
+        QTabWidget::pane {
+            border: none;
+            background: #1E1E1E;
+        }
+        QTabBar::tab {
+            background: #2D2D30;
+            color: #969696;
+            padding: 10px 16px;
+            margin-right: 1px;
+            border: none;
+        }
+        QTabBar::tab:selected {
+            background: #1E1E1E;
+            color: #FFFFFF;
+            border-top: 2px solid #007ACC;
+        }
+        QTabBar::tab:hover {
+            background: #3E3E42;
+            color: #CCCCCC;
+        }
+        QStatusBar {
+            background: #007ACC;
+            color: #FFFFFF;
+            border: none;
+        }
+    )");
 
     // Apply window opacity
     setWindowOpacity(settings->terminalOpacity());
@@ -92,14 +161,17 @@ MainWindow::~MainWindow()
         delete tabData.connection;
     }
 
-    delete m_profileStorage;
+    // delete m_profileStorage;
     qInfo(ui) << "MainWindow cleanup complete";
 }
 
 void MainWindow::addNewTab(const QString& title)
 {
     TabData tabData;
+
+    // Create terminal directly (no split container for now)
     tabData.terminal = new TerminalView();
+    tabData.splitContainer = nullptr;
 
     // Apply current settings to new terminal
     AppSettings* settings = AppSettings::instance();
@@ -160,12 +232,26 @@ void MainWindow::onNewConnection()
             QLineEdit* passwordEdit = dialog.findChild<QLineEdit*>("passwordEdit");
             if (passwordEdit) {
                 password = passwordEdit->text();
+
+                // Store password in Keychain
+                if (!password.isEmpty()) {
+                    CredentialManager* credManager = new CredentialManager();
+                    QString service = QString("SSH:%1").arg(profile.hostname());
+                    try {
+                        credManager->storePassword(service, profile.username(), password);
+                        qInfo(ui) << "Password stored in Keychain for" << profile.username() << "@" << profile.hostname();
+                    } catch (...) {
+                        qWarning(ui) << "Failed to store password in Keychain";
+                    }
+                    delete credManager;
+                }
             }
         }
 
-        // Save profile for future use
+        // Save profile for future use (before hiding welcome tab)
         saveCurrentProfile(profile);
 
+        // Start connection (this will hide welcome tab)
         handleConnectionRequest(profile, password);
     }
 }
@@ -184,8 +270,8 @@ void MainWindow::onCopy()
 {
     TerminalView* terminal = currentTerminal();
     if (terminal) {
-        QClipboard* clipboard = QApplication::clipboard();
         // TODO: Implement text selection in TerminalView
+        // QClipboard* clipboard = QApplication::clipboard();
         // clipboard->setText(terminal->getSelectedText());
     }
 }
@@ -270,69 +356,103 @@ void MainWindow::onTabCloseRequested(int index)
 
 void MainWindow::handleConnectionRequest(const ConnectionProfile& profile, const QString& password)
 {
-    // Create new window for each connection
-    MainWindow* newWindow = new MainWindow();
-    newWindow->show();
-    newWindow->raise();
-    newWindow->activateWindow();
+    qDebug(ui) << "=== handleConnectionRequest START ===";
+    qDebug(ui) << "Profile:" << profile.profileName() << profile.username() << profile.hostname() << profile.port();
 
-    // Hide welcome tab in new window
-    newWindow->hideWelcomeTab();
+    // Hide welcome tab
+    hideWelcomeTab();
+    qDebug(ui) << "Welcome tab hidden";
 
-    // Create new terminal tab in new window
-    newWindow->addNewTab(profile.profileName());
-
-    int index = newWindow->m_tabWidget->currentIndex();
-    if (index < 0 || index >= newWindow->m_tabs.size()) {
-        return;
-    }
-
-    TabData& tabData = newWindow->m_tabs[index];
-
-    // Create connection
-    tabData.connection = new SSHConnection(profile);
-
-    // Create authenticator with credentials
-    SSHAuthenticator* authenticator = new SSHAuthenticator(profile, password, profile.keyFilePath());
-    tabData.connection->setAuthenticator(authenticator);
-
-    // Setup connection signals
-    connect(tabData.connection, &SSHConnection::connected, newWindow, &MainWindow::handleConnected);
-    connect(tabData.connection, &SSHConnection::disconnected, newWindow,
-            &MainWindow::handleDisconnected);
-    connect(tabData.connection, &SSHConnection::error, newWindow, &MainWindow::handleError);
-
-    // Connect to host
-    newWindow->showStatusMessage("Connecting to " + profile.hostname() + "...");
-    tabData.connection->connectToHost();
-}
-
-void MainWindow::handleConnected()
-{
-    showStatusMessage("Connected", 3000);
+    // Create new terminal tab
+    addNewTab(profile.profileName());
+    qDebug(ui) << "New tab added, total tabs:" << m_tabs.size();
 
     int index = m_tabWidget->currentIndex();
+    qDebug(ui) << "Current tab index:" << index << "m_tabs.size:" << m_tabs.size();
+
     if (index < 0 || index >= m_tabs.size()) {
+        qCritical(ui) << "CRITICAL: Invalid index" << index << "for m_tabs.size" << m_tabs.size();
         return;
     }
 
     TabData& tabData = m_tabs[index];
+    qDebug(ui) << "Got TabData, terminal:" << (void*)tabData.terminal;
+
+    if (!tabData.terminal) {
+        qCritical(ui) << "CRITICAL: Terminal is null!";
+        return;
+    }
+
+    // Create connection
+    qDebug(ui) << "Creating SSHConnection...";
+    tabData.connection = new SSHConnection(profile);
+    qDebug(ui) << "SSHConnection created:" << (void*)tabData.connection;
+
+    // Create authenticator with credentials
+    qDebug(ui) << "Creating authenticator...";
+    // Only pass keyFilePath if using PublicKey auth, otherwise pass empty string
+    QString keyPath;
+    if (profile.authMethod() == ConnectionProfile::AuthMethod::PublicKey) {
+        keyPath = profile.keyFilePath();
+    }
+    SSHAuthenticator* authenticator = new SSHAuthenticator(profile, password, keyPath);
+    tabData.connection->setAuthenticator(authenticator);
+    qDebug(ui) << "Authenticator set";
+
+    // Setup connection signals - use connection pointer to find tab later
+    SSHConnection* conn = tabData.connection;
+    qDebug(ui) << "Connecting signals...";
+    connect(conn, &SSHConnection::connected, this, [this, conn]() {
+        qDebug(ui) << "Connected signal received";
+        // Find tab by connection pointer
+        for (int i = 0; i < m_tabs.size(); i++) {
+            if (m_tabs[i].connection == conn) {
+                qDebug(ui) << "Found matching tab at index" << i;
+                handleConnected(i);
+                break;
+            }
+        }
+    });
+    connect(tabData.connection, &SSHConnection::disconnected, this, &MainWindow::handleDisconnected);
+    connect(tabData.connection, &SSHConnection::error, this, &MainWindow::handleError);
+    qDebug(ui) << "Signals connected";
+
+    // Connect to host
+    showStatusMessage("Connecting to " + profile.hostname() + "...");
+    qDebug(ui) << "Calling connectToHost...";
+    tabData.connection->connectToHost();
+    qDebug(ui) << "=== handleConnectionRequest END ===";
+}
+
+void MainWindow::handleConnected(int tabIndex)
+{
+    showStatusMessage("Connected", 3000);
+
+    if (tabIndex < 0 || tabIndex >= m_tabs.size()) {
+        return;
+    }
+
+    TabData& tabData = m_tabs[tabIndex];
 
     // Create worker thread
     tabData.worker = new SSHWorkerThread(tabData.connection);
 
-    // Connect worker signals
+    // Connect worker signals - capture tab index
     connect(tabData.worker, &SSHWorkerThread::dataReceived, this,
-            &MainWindow::handleDataReceived);
+            [this, tabIndex](const QByteArray& data) {
+                handleDataReceived(tabIndex, data);
+            });
     connect(tabData.worker, &SSHWorkerThread::error, this, &MainWindow::handleError);
     connect(tabData.worker, &SSHWorkerThread::disconnected, this,
             &MainWindow::handleDisconnected);
 
     // Connect terminal to worker
-    connect(tabData.terminal, &TerminalView::sendData,
-            [worker = tabData.worker](const QString& data) {
-                worker->writeData(data.toUtf8());
-            });
+    if (tabData.terminal) {
+        connect(tabData.terminal, &TerminalView::sendData,
+                [worker = tabData.worker](const QString& data) {
+                    worker->writeData(data.toUtf8());
+                });
+    }
 
     // Start worker
     tabData.worker->start();
@@ -388,11 +508,14 @@ void MainWindow::handleError(const QString& error)
     }
 }
 
-void MainWindow::handleDataReceived(const QByteArray& data)
+void MainWindow::handleDataReceived(int tabIndex, const QByteArray& data)
 {
-    int index = m_tabWidget->currentIndex();
-    if (index >= 0 && index < m_tabs.size()) {
-        m_tabs[index].terminal->displayOutput(QString::fromUtf8(data));
+    if (tabIndex >= 0 && tabIndex < m_tabs.size()) {
+        // Display on terminal
+        TerminalView* terminal = m_tabs[tabIndex].terminal;
+        if (terminal) {
+            terminal->displayOutput(QString::fromUtf8(data));
+        }
     }
 }
 
@@ -405,10 +528,19 @@ void MainWindow::setupUi()
     // Set size policy to expand with window
     m_tabWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
+    // Enable document mode for cleaner tabs
+    m_tabWidget->setDocumentMode(true);
+
     setCentralWidget(m_tabWidget);
 
     connect(m_tabWidget, &QTabWidget::tabCloseRequested, this,
             &MainWindow::onTabCloseRequested);
+
+    // Tab change handler (animations disabled for stability)
+    connect(m_tabWidget, &QTabWidget::currentChanged, [](int index) {
+        // Just switch tabs without animation for now
+        Q_UNUSED(index);
+    });
 
     // Show welcome tab initially (will be hidden when first connection is made)
     showWelcomeTab();
@@ -477,87 +609,7 @@ void MainWindow::createActions()
 
 void MainWindow::createStatusBar()
 {
-    // Quick connect widgets
-    QWidget* quickConnectWidget = new QWidget(this);
-    QHBoxLayout* quickConnectLayout = new QHBoxLayout(quickConnectWidget);
-    quickConnectLayout->setContentsMargins(0, 0, 0, 0);
-
-    QLabel* quickConnectLabel = new QLabel("Quick Connect:");
-    QLineEdit* hostEdit = new QLineEdit();
-    hostEdit->setPlaceholderText("user@host:port");
-    hostEdit->setMaximumWidth(200);
-    hostEdit->setObjectName("quickConnectEdit");
-
-    QPushButton* quickConnectBtn = new QPushButton("Connect");
-    quickConnectBtn->setMaximumWidth(80);
-
-    quickConnectLayout->addWidget(quickConnectLabel);
-    quickConnectLayout->addWidget(hostEdit);
-    quickConnectLayout->addWidget(quickConnectBtn);
-
-    statusBar()->addPermanentWidget(quickConnectWidget);
     statusBar()->showMessage("Ready");
-
-    // Connect quick connect button
-    connect(quickConnectBtn, &QPushButton::clicked, [this, hostEdit]() {
-        QString input = hostEdit->text().trimmed();
-        if (input.isEmpty()) {
-            return;
-        }
-
-        // Parse input: user@host or user@host:port
-        QString username, hostname;
-        int port = 22;
-
-        int atPos = input.indexOf('@');
-        if (atPos < 0) {
-            // No username, use current user
-            hostname = input;
-            username = qgetenv("USER");
-            if (username.isEmpty()) {
-                username = qgetenv("USERNAME"); // Windows
-            }
-        } else {
-            username = input.left(atPos);
-            QString hostPart = input.mid(atPos + 1);
-
-            int colonPos = hostPart.indexOf(':');
-            if (colonPos >= 0) {
-                hostname = hostPart.left(colonPos);
-                port = hostPart.mid(colonPos + 1).toInt();
-                if (port <= 0 || port > 65535) {
-                    port = 22;
-                }
-            } else {
-                hostname = hostPart;
-            }
-        }
-
-        // Create connection profile
-        ConnectionProfile profile(hostname, hostname, port, username);
-
-        // Show connection dialog with pre-filled data
-        ConnectionDialog dialog(this);
-        dialog.setProfile(profile);
-
-        if (dialog.exec() == QDialog::Accepted) {
-            ConnectionProfile finalProfile = dialog.getProfile();
-            QString password;
-
-            if (finalProfile.authMethod() == ConnectionProfile::AuthMethod::Password) {
-                QLineEdit* passwordEdit = dialog.findChild<QLineEdit*>("passwordEdit");
-                if (passwordEdit) {
-                    password = passwordEdit->text();
-                }
-            }
-
-            handleConnectionRequest(finalProfile, password);
-            hostEdit->clear();
-        }
-    });
-
-    // Connect on Enter key
-    connect(hostEdit, &QLineEdit::returnPressed, quickConnectBtn, &QPushButton::click);
 }
 
 void MainWindow::setupConnections()
@@ -573,56 +625,111 @@ void MainWindow::showWelcomeTab()
 
     m_welcomeWidget = new QWidget(this);
     m_welcomeWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    m_welcomeWidget->setStyleSheet("background: #1E1E1E;");
 
     QVBoxLayout* layout = new QVBoxLayout(m_welcomeWidget);
-    layout->setContentsMargins(20, 20, 20, 20);
+    layout->setContentsMargins(60, 60, 60, 60);
 
-    QLabel* titleLabel = new QLabel("Welcome to SSH Client", m_welcomeWidget);
+    QLabel* titleLabel = new QLabel("SSH Client", m_welcomeWidget);
     QFont titleFont = titleLabel->font();
-    titleFont.setPointSize(24);
-    titleFont.setBold(true);
+    titleFont.setPointSize(48);
+    titleFont.setWeight(QFont::Light);
     titleLabel->setFont(titleFont);
     titleLabel->setAlignment(Qt::AlignCenter);
     titleLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    titleLabel->setStyleSheet("color: #FFFFFF;");
 
-    QLabel* infoLabel = new QLabel("Click 'New Connection' or press Ctrl+N to connect to a server", m_welcomeWidget);
-    infoLabel->setAlignment(Qt::AlignCenter);
-    infoLabel->setStyleSheet("color: gray; font-size: 14px;");
-    infoLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-    infoLabel->setWordWrap(true);
+    QLabel* subtitleLabel = new QLabel("Secure Shell Terminal", m_welcomeWidget);
+    QFont subtitleFont = subtitleLabel->font();
+    subtitleFont.setPointSize(14);
+    subtitleFont.setWeight(QFont::Light);
+    subtitleLabel->setFont(subtitleFont);
+    subtitleLabel->setAlignment(Qt::AlignCenter);
+    subtitleLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    subtitleLabel->setStyleSheet("color: #858585;");
 
-    // Add a button for quick access
+    // Add a clean button with animations
     QPushButton* newConnBtn = new QPushButton("New Connection", m_welcomeWidget);
-    newConnBtn->setMinimumSize(200, 50);
-    newConnBtn->setMaximumSize(300, 60);
+    newConnBtn->setMinimumSize(200, 45);
+    newConnBtn->setMaximumSize(300, 50);
     newConnBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    newConnBtn->setStyleSheet("QPushButton { font-size: 16px; padding: 10px; }");
+    newConnBtn->setCursor(Qt::PointingHandCursor);
+    newConnBtn->setStyleSheet(R"(
+        QPushButton {
+            background: #007ACC;
+            color: #FFFFFF;
+            font-size: 14px;
+            font-weight: 500;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 2px;
+        }
+        QPushButton:hover {
+            background: #1C97EA;
+        }
+        QPushButton:pressed {
+            background: #005A9E;
+        }
+    )");
+
+    // Connect button click
     connect(newConnBtn, &QPushButton::clicked, this, &MainWindow::onNewConnection);
 
-    // Saved connections section
-    QLabel* savedLabel = new QLabel("Saved Connections:", m_welcomeWidget);
-    savedLabel->setStyleSheet("font-size: 16px; font-weight: bold;");
+    // Saved connections list
+    QLabel* savedLabel = new QLabel("Saved Connections", m_welcomeWidget);
+    QFont savedFont = savedLabel->font();
+    savedFont.setPointSize(12);
+    savedFont.setWeight(QFont::Normal);
+    savedLabel->setFont(savedFont);
+    savedLabel->setAlignment(Qt::AlignLeft);
+    savedLabel->setStyleSheet("color: #CCCCCC; padding-left: 10px;");
     savedLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
 
     m_savedConnectionsList = new QListWidget(m_welcomeWidget);
-    m_savedConnectionsList->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    m_savedConnectionsList->setMinimumHeight(150);
-    m_savedConnectionsList->setStyleSheet("QListWidget { font-size: 14px; }");
-    connect(m_savedConnectionsList, &QListWidget::itemDoubleClicked, this, &MainWindow::onSavedConnectionClicked);
+    m_savedConnectionsList->setMaximumHeight(200);
+    m_savedConnectionsList->setMinimumWidth(400);
+    m_savedConnectionsList->setMaximumWidth(600);
+    m_savedConnectionsList->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_savedConnectionsList->setStyleSheet(R"(
+        QListWidget {
+            background: #252526;
+            color: #CCCCCC;
+            border: 1px solid #3C3C3C;
+            border-radius: 3px;
+            padding: 8px;
+            font-size: 13px;
+        }
+        QListWidget::item {
+            padding: 10px;
+            border-radius: 2px;
+            margin: 2px 0px;
+        }
+        QListWidget::item:hover {
+            background: #2A2D2E;
+        }
+        QListWidget::item:selected {
+            background: #094771;
+            color: #FFFFFF;
+        }
+    )");
+
+    // Connect list item click
+    connect(m_savedConnectionsList, &QListWidget::itemClicked,
+            this, &MainWindow::onSavedConnectionClicked);
 
     // Load saved profiles
     loadSavedProfiles();
 
-    layout->addStretch(1);
+    layout->addStretch(2);
     layout->addWidget(titleLabel);
-    layout->addSpacing(20);
-    layout->addWidget(infoLabel);
-    layout->addSpacing(30);
+    layout->addSpacing(8);
+    layout->addWidget(subtitleLabel);
+    layout->addSpacing(50);
     layout->addWidget(newConnBtn, 0, Qt::AlignCenter);
-    layout->addSpacing(30);
+    layout->addSpacing(40);
     layout->addWidget(savedLabel);
     layout->addSpacing(10);
-    layout->addWidget(m_savedConnectionsList);
+    layout->addWidget(m_savedConnectionsList, 0, Qt::AlignCenter);
     layout->addStretch(1);
 
     int index = m_tabWidget->addTab(m_welcomeWidget, "Welcome");
@@ -630,6 +737,8 @@ void MainWindow::showWelcomeTab()
     // Make welcome tab non-closable by setting tab button to nullptr
     m_tabWidget->tabBar()->setTabButton(index, QTabBar::RightSide, nullptr);
     m_tabWidget->tabBar()->setTabButton(index, QTabBar::LeftSide, nullptr);
+
+    // Animation disabled for stability
 }
 
 void MainWindow::hideWelcomeTab()
@@ -650,92 +759,242 @@ void MainWindow::hideWelcomeTab()
 
 void MainWindow::loadSavedProfiles()
 {
+    qDebug(ui) << "=== loadSavedProfiles START ===";
+
     if (!m_savedConnectionsList) {
+        qWarning(ui) << "m_savedConnectionsList is null, returning";
         return;
     }
 
     m_savedConnectionsList->clear();
 
-    QList<ConnectionProfile> profiles = m_profileStorage->loadAllProfiles();
+    // Use JSON file instead of QSettings
+    QString configPath = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    QString filePath = configPath + "/connections.json";
 
-    if (profiles.isEmpty()) {
-        QListWidgetItem* item = new QListWidgetItem("No saved connections");
-        item->setFlags(item->flags() & ~Qt::ItemIsEnabled);
-        item->setForeground(Qt::gray);
-        m_savedConnectionsList->addItem(item);
+    qDebug(ui) << "Loading profiles from:" << filePath;
+
+    QFile file(filePath);
+    if (!file.exists()) {
+        qDebug(ui) << "No saved profiles file";
         return;
     }
 
-    for (const ConnectionProfile& profile : profiles) {
+    if (!file.open(QIODevice::ReadOnly)) {
+        qWarning(ui) << "Failed to open profiles file";
+        return;
+    }
+
+    QByteArray jsonData = file.readAll();
+    file.close();
+
+    QJsonDocument doc = QJsonDocument::fromJson(jsonData);
+    if (!doc.isArray()) {
+        qWarning(ui) << "Invalid profiles file format";
+        return;
+    }
+
+    QJsonArray profiles = doc.array();
+    qDebug(ui) << "Found" << profiles.size() << "profiles";
+
+    for (const QJsonValue& value : profiles) {
+        QJsonObject profile = value.toObject();
+
+        QString name = profile["name"].toString();
+        QString host = profile["host"].toString();
+        QString user = profile["user"].toString();
+        int port = profile["port"].toInt(22);
+
+        if (name.isEmpty() || host.isEmpty()) {
+            continue;
+        }
+
         QString displayText = QString("%1 (%2@%3:%4)")
-                                  .arg(profile.profileName())
-                                  .arg(profile.username())
-                                  .arg(profile.hostname())
-                                  .arg(profile.port());
+                                  .arg(name)
+                                  .arg(user)
+                                  .arg(host)
+                                  .arg(port);
 
         QListWidgetItem* item = new QListWidgetItem(displayText);
-        item->setData(Qt::UserRole, profile.profileName());
+        QVariantMap profileData;
+        profileData["name"] = name;
+        profileData["host"] = host;
+        profileData["user"] = user;
+        profileData["port"] = port;
+        profileData["authMethod"] = profile["authMethod"].toInt(0);
+        profileData["keyFile"] = profile["keyFile"].toString("");
+        item->setData(Qt::UserRole, profileData);
         m_savedConnectionsList->addItem(item);
     }
+
+    qDebug(ui) << "=== loadSavedProfiles END ===" << m_savedConnectionsList->count() << "items";
 }
 
 void MainWindow::saveCurrentProfile(const ConnectionProfile& profile)
 {
-    if (!m_profileStorage) {
-        return;
+    // Use JSON file instead of QSettings
+    QString configPath = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    QDir dir(configPath);
+    if (!dir.exists()) {
+        dir.mkpath(".");
     }
 
-    if (m_profileStorage->saveProfile(profile)) {
+    QString filePath = configPath + "/connections.json";
+    qDebug(ui) << "Saving profile to:" << filePath;
+
+    // Load existing profiles
+    QJsonArray profiles;
+    QFile file(filePath);
+    if (file.exists() && file.open(QIODevice::ReadOnly)) {
+        QByteArray data = file.readAll();
+        file.close();
+        QJsonDocument doc = QJsonDocument::fromJson(data);
+        if (doc.isArray()) {
+            profiles = doc.array();
+        }
+    }
+
+    // Check if profile already exists and update it
+    bool found = false;
+    for (int i = 0; i < profiles.size(); ++i) {
+        QJsonObject obj = profiles[i].toObject();
+        if (obj["name"].toString() == profile.profileName() &&
+            obj["host"].toString() == profile.hostname()) {
+            // Update existing profile
+            obj["user"] = profile.username();
+            obj["port"] = profile.port();
+            obj["authMethod"] = static_cast<int>(profile.authMethod());
+            obj["keyFile"] = profile.keyFilePath();
+            profiles[i] = obj;
+            found = true;
+            break;
+        }
+    }
+
+    // Add new profile if not found
+    if (!found) {
+        QJsonObject newProfile;
+        newProfile["name"] = profile.profileName();
+        newProfile["host"] = profile.hostname();
+        newProfile["user"] = profile.username();
+        newProfile["port"] = profile.port();
+        newProfile["authMethod"] = static_cast<int>(profile.authMethod());
+        newProfile["keyFile"] = profile.keyFilePath();
+        profiles.append(newProfile);
+    }
+
+    // Save to file
+    QJsonDocument doc(profiles);
+    if (file.open(QIODevice::WriteOnly)) {
+        file.write(doc.toJson());
+        file.close();
         qInfo(ui) << "Profile saved:" << profile.profileName();
-
-        // Add to recent connections
-        AppSettings::instance()->addRecentConnection(profile.profileName());
-        AppSettings::instance()->save();
-
-        // Reload saved profiles list
-        loadSavedProfiles();
     } else {
-        qWarning(ui) << "Failed to save profile:" << profile.profileName();
+        qWarning(ui) << "Failed to save profile";
+    }
+
+    // Add to recent connections
+    AppSettings::instance()->addRecentConnection(profile.profileName());
+    AppSettings::instance()->save();
+
+    // Reload saved profiles list (only if welcome widget exists)
+    if (m_savedConnectionsList) {
+        loadSavedProfiles();
     }
 }
 
 void MainWindow::onSavedConnectionClicked(QListWidgetItem* item)
 {
+    qDebug(ui) << "=== onSavedConnectionClicked START ===";
+
     if (!item) {
+        qWarning(ui) << "Item is null";
         return;
     }
 
-    QString profileName = item->data(Qt::UserRole).toString();
-    if (profileName.isEmpty()) {
+    // Check if item is enabled (skip "No saved connections" placeholder)
+    if (!(item->flags() & Qt::ItemIsEnabled)) {
+        qDebug(ui) << "Item is disabled";
         return;
     }
 
-    ConnectionProfile profile = m_profileStorage->loadProfile(profileName);
-    if (!profile.isValid()) {
-        qWarning(ui) << "Failed to load profile:" << profileName;
-        ErrorDialog::showError(this, "Load Error",
-                               "Failed to load saved connection: " + profileName,
-                               ErrorDialog::ErrorType::Configuration);
+    // Get stored profile data
+    QVariantMap profileData = item->data(Qt::UserRole).toMap();
+    if (profileData.isEmpty()) {
+        qWarning(ui) << "Profile data is empty";
         return;
     }
 
-    // For saved profiles, we can't retrieve passwords
-    // User will need to enter password if it's password auth
+    QString user = profileData["user"].toString();
+    QString host = profileData["host"].toString();
+    int port = profileData["port"].toInt();
+    QString name = profileData["name"].toString();
+
+    qDebug(ui) << "Connecting to:" << name << user << host << port;
+
+    if (user.isEmpty() || host.isEmpty()) {
+        qWarning(ui) << "User or host is empty";
+        return;
+    }
+
+    // Create connection profile
+    ConnectionProfile profile;
+    profile.setProfileName(name);
+    profile.setHostname(host);
+    profile.setPort(port);
+    profile.setUsername(user);
+    profile.setAuthMethod(static_cast<ConnectionProfile::AuthMethod>(profileData["authMethod"].toInt()));
+    profile.setKeyFilePath(profileData["keyFile"].toString());
+
     QString password;
-    if (profile.authMethod() == ConnectionProfile::AuthMethod::Password) {
-        // Show connection dialog with pre-filled data
-        ConnectionDialog dialog(this);
-        dialog.setProfile(profile);
 
-        if (dialog.exec() == QDialog::Accepted) {
-            QLineEdit* passwordEdit = dialog.findChild<QLineEdit*>("passwordEdit");
-            if (passwordEdit) {
-                password = passwordEdit->text();
-            }
-            handleConnectionRequest(profile, password);
+    // Try to retrieve password from Keychain
+    if (profile.authMethod() == ConnectionProfile::AuthMethod::Password) {
+        qDebug(ui) << "Attempting to retrieve password from Keychain";
+
+        CredentialManager* credManager = new CredentialManager();
+        QString service = QString("SSH:%1").arg(host);
+
+        try {
+            password = credManager->retrievePassword(service, user);
+            qDebug(ui) << "Password retrieved, empty:" << password.isEmpty();
+        } catch (...) {
+            qWarning(ui) << "Exception retrieving password from Keychain";
+            password = "";
         }
-    } else {
-        // Public key auth - connect directly
-        handleConnectionRequest(profile, QString());
+
+        if (password.isEmpty()) {
+            qDebug(ui) << "No stored password, showing password dialog";
+            // No stored password, ask user
+            SimplePasswordDialog dialog(user, host, this);
+            if (dialog.exec() != QDialog::Accepted) {
+                qDebug(ui) << "Password dialog cancelled";
+                delete credManager;
+                return;
+            }
+            password = dialog.password();
+            if (password.isEmpty()) {
+                qWarning(ui) << "Password is empty";
+                delete credManager;
+                return;
+            }
+
+            // Store password for next time
+            try {
+                credManager->storePassword(service, user, password);
+                qInfo(ui) << "Password stored in Keychain";
+            } catch (...) {
+                qWarning(ui) << "Exception storing password in Keychain";
+            }
+        } else {
+            qInfo(ui) << "Using stored password from Keychain";
+        }
+
+        delete credManager;
     }
+
+    qDebug(ui) << "Calling handleConnectionRequest";
+    // Connect with password
+    handleConnectionRequest(profile, password);
+    qDebug(ui) << "=== onSavedConnectionClicked END ===";
 }

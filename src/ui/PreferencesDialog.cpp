@@ -10,6 +10,7 @@
 #include <QFontDatabase>
 #include <QPixmap>
 #include <QDir>
+#include <QStandardPaths>
 #include <QRegularExpression>
 
 PreferencesDialog::PreferencesDialog(QWidget* parent)
@@ -106,7 +107,11 @@ void PreferencesDialog::createAppearanceTab()
     layout->addWidget(imageGroup);
     layout->addStretch();
 
-    connect(m_browseButton, &QPushButton::clicked, this, &PreferencesDialog::onBrowseBackgroundImage);
+    // Connect signals
+    connect(m_browseButton, &QPushButton::clicked, this, [this]() {
+        qDebug() << "Browse button clicked (lambda)!";
+        onBrowseBackgroundImage();
+    });
     connect(m_clearImageButton, &QPushButton::clicked, this, &PreferencesDialog::onClearBackgroundImage);
     connect(m_backgroundImageOpacitySlider, &QSlider::valueChanged, this, &PreferencesDialog::onBackgroundImageOpacityChanged);
 
@@ -229,9 +234,39 @@ void PreferencesDialog::createConnectionTab()
 
 void PreferencesDialog::onBrowseBackgroundImage()
 {
-    QString fileName = QFileDialog::getOpenFileName(this, "Select Background Image",
-                                                     QDir::homePath(),
-                                                     "Images (*.png *.jpg *.jpeg *.bmp *.gif)");
+    qDebug() << "Browse button clicked!";
+
+    // Default to Pictures folder
+    QString defaultPath = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
+    if (defaultPath.isEmpty() || !QDir(defaultPath).exists()) {
+        defaultPath = QDir::homePath();
+    }
+
+    qDebug() << "Opening file dialog with path:" << defaultPath;
+
+    // Use Qt's file dialog instead of native
+    QFileDialog dialog(this);
+    dialog.setWindowTitle(tr("Select Background Image"));
+    dialog.setDirectory(defaultPath);
+    dialog.setNameFilter(tr("Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp);;All Files (*)"));
+    dialog.setFileMode(QFileDialog::ExistingFile);
+    dialog.setViewMode(QFileDialog::Detail);
+    dialog.setOption(QFileDialog::DontUseNativeDialog, true);  // Force Qt dialog
+
+    // Set window modality
+    dialog.setWindowModality(Qt::ApplicationModal);
+
+    qDebug() << "About to show dialog...";
+
+    QString fileName;
+    if (dialog.exec() == QDialog::Accepted) {
+        QStringList files = dialog.selectedFiles();
+        if (!files.isEmpty()) {
+            fileName = files.first();
+        }
+    }
+
+    qDebug() << "Selected file:" << fileName;
 
     if (!fileName.isEmpty()) {
         m_backgroundImageEdit->setText(fileName);
@@ -241,8 +276,12 @@ void PreferencesDialog::onBrowseBackgroundImage()
         if (!pixmap.isNull()) {
             QPixmap scaled = pixmap.scaled(m_imagePreviewLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
             m_imagePreviewLabel->setPixmap(scaled);
+        } else {
+            qWarning() << "Failed to load image:" << fileName;
         }
     }
+
+    qDebug() << "Browse dialog finished";
 }
 
 void PreferencesDialog::onClearBackgroundImage()
