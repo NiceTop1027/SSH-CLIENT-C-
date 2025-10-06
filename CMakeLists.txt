@@ -98,6 +98,13 @@ elseif(APPLE)
     if(SECURITY_FRAMEWORK)
         target_link_libraries(${PROJECT_NAME} ${SECURITY_FRAMEWORK})
     endif()
+
+    # Post-build: Remove quarantine and sign app to prevent Gatekeeper issues
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND xattr -cr $<TARGET_BUNDLE_DIR:${PROJECT_NAME}> || true
+        COMMAND codesign --force --deep --sign - $<TARGET_BUNDLE_DIR:${PROJECT_NAME}> || true
+        COMMENT "Removing quarantine attributes and signing app bundle"
+    )
 endif()
 
 # Install targets
